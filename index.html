@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Board Game Digital Bank</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body class="min-h-screen pb-12">
+
+    <!-- Auth / Setup Screen -->
+    <div id="setup-screen" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-75 p-4">
+        <div class="glass-card w-full max-w-md p-8 rounded-2xl shadow-2xl">
+            <h1 class="text-3xl font-bold text-gray-800 mb-2">Game Bank</h1>
+            <p class="text-gray-600 mb-6">Create or Join a board game session</p>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Display Name</label>
+                    <input type="text" id="user-name" placeholder="Enter your name" class="w-full mt-1 p-3 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Game Code</label>
+                    <input type="text" id="game-id" placeholder="e.g. MONOPOLY-123" class="w-full mt-1 p-3 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none uppercase font-mono">
+                </div>
+
+                <div id="new-game-settings" class="hidden pt-4 border-t border-gray-100 mt-4">
+                    <h3 class="font-semibold text-gray-800 mb-2">New Game Configuration</h3>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs text-gray-500 uppercase">Player Start $</label>
+                            <input type="number" id="start-player" value="1500" class="w-full mt-1 p-2 border rounded-lg outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-500 uppercase">Bank Start $</label>
+                            <input type="number" id="start-bank" value="20500" class="w-full mt-1 p-2 border rounded-lg outline-none">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex flex-col gap-3 mt-6">
+                    <button id="btn-join" class="w-full bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition">Join Existing Game</button>
+                    <button id="btn-toggle-new" class="text-blue-600 text-sm font-medium hover:underline">Or start a new game session</button>
+                    <button id="btn-create" class="hidden w-full bg-green-600 text-white font-bold py-3 rounded-xl hover:bg-green-700 transition">Create & Join Game</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Game UI -->
+    <div id="game-ui" class="hidden max-w-4xl mx-auto px-4 pt-8">
+        <header class="flex justify-between items-center mb-8">
+            <div>
+                <h2 id="display-game-id" class="text-sm font-mono text-gray-500 uppercase tracking-widest">GAME: ----</h2>
+                <h1 class="text-2xl font-bold text-gray-800">Board Game Bank</h1>
+            </div>
+            <div class="text-right">
+                <span id="current-user-display" class="block font-medium text-gray-700">---</span>
+                <span class="text-xs text-green-500 font-bold uppercase tracking-tighter">Online</span>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div class="md:col-span-1 space-y-6">
+                <div class="glass-card p-6 rounded-2xl shadow-lg border-l-4 border-blue-500">
+                    <p class="text-sm text-gray-500 font-semibold uppercase">My Balance</p>
+                    <h2 id="my-balance" class="text-4xl font-black text-blue-600">$0</h2>
+                </div>
+                <div class="glass-card p-6 rounded-2xl shadow-lg border-l-4 border-orange-500">
+                    <p class="text-sm text-gray-500 font-semibold uppercase">The Bank</p>
+                    <h2 id="bank-balance" class="text-4xl font-black text-orange-600">$0</h2>
+                </div>
+                <div class="glass-card p-6 rounded-2xl shadow-lg">
+                    <h3 class="font-bold text-gray-800 mb-4">Quick Actions</h3>
+                    <div class="grid grid-cols-1 gap-3">
+                        <button onclick="openTransfer('Bank')" class="flex items-center justify-between p-3 bg-orange-50 hover:bg-orange-100 rounded-xl text-orange-700 font-medium transition">
+                            <span>Pay Bank</span>
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path></svg>
+                        </button>
+                        <button onclick="openTransfer('Self', 'Bank')" class="flex items-center justify-between p-3 bg-blue-50 hover:bg-blue-100 rounded-xl text-blue-700 font-medium transition">
+                            <span>Collect from Bank</span>
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16l-4-4m0 0l4-4m-4 4h18"></path></svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="md:col-span-2 space-y-6">
+                <div class="glass-card p-6 rounded-2xl shadow-lg">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="font-bold text-gray-800 text-lg">Other Players</h3>
+                        <span id="player-count" class="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-full">0 online</span>
+                    </div>
+                    <div id="players-list" class="space-y-3 max-h-60 overflow-y-auto pr-2">
+                        <p class="text-gray-400 text-sm italic">Waiting for other players...</p>
+                    </div>
+                </div>
+                <div class="glass-card p-6 rounded-2xl shadow-lg">
+                    <h3 class="font-bold text-gray-800 text-lg mb-4">Recent Transactions</h3>
+                    <div id="logs-list" class="space-y-3 max-h-80 overflow-y-auto pr-2"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Transfer Modal -->
+    <div id="transfer-modal" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50 p-4">
+        <div class="bg-white w-full max-w-sm p-6 rounded-2xl shadow-2xl">
+            <h3 id="transfer-title" class="text-xl font-bold text-gray-800 mb-1">Transfer Money</h3>
+            <p id="transfer-desc" class="text-sm text-gray-500 mb-4"></p>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Amount</label>
+                    <div class="relative mt-1">
+                        <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold">$</span>
+                        <input type="number" id="transfer-amount" placeholder="0" class="w-full p-3 pl-8 border rounded-xl text-2xl font-bold focus:ring-2 focus:ring-blue-500 outline-none">
+                    </div>
+                </div>
+                <div class="flex gap-3">
+                    <button onclick="closeTransfer()" class="flex-1 px-4 py-3 bg-gray-100 text-gray-600 font-bold rounded-xl hover:bg-gray-200">Cancel</button>
+                    <button id="btn-confirm-transfer" class="flex-1 px-4 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700">Confirm</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 translate-y-20 opacity-0 bg-gray-800 text-white px-6 py-3 rounded-full shadow-lg transition-all duration-300 z-[100]"></div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, updateDoc, arrayUnion, serverTimestamp, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Your provided Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyDI_c51cjIUcuas4TCaQQVJrmiXybd5Nqk",
+            authDomain: "boardgame-4dad0.firebaseapp.com",
+            projectId: "boardgame-4dad0",
+            storageBucket: "boardgame-4dad0.firebasestorage.app",
+            messagingSenderId: "459554594635",
+            appId: "1:459554594635:web:26f3ba47e5d69b52e412ce"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = 'boardgame-4dad0-v1'; // Using your project ID as a prefix
+
+        let currentUser = null;
+        let currentGameId = null;
+        let myData = null;
+        let allPlayers = [];
+        let activeTransferTarget = null;
+        let activeTransferSender = 'Self';
+
+        const inputs = { 
+            name: document.getElementById('user-name'), 
+            gameId: document.getElementById('game-id'),
+            startPlayer: document.getElementById('start-player'),
+            startBank: document.getElementById('start-bank'),
+            transferAmount: document.getElementById('transfer-amount')
+        };
+
+        const buttons = {
+            join: document.getElementById('btn-join'),
+            create: document.getElementById('btn-create'),
+            toggleNew: document.getElementById('btn-toggle-new'),
+            confirmTransfer: document.getElementById('btn-confirm-transfer')
+        };
+
+        // --- AUTH ---
+        onAuthStateChanged(auth, (user) => {
+            currentUser = user;
+            if (!user) signInAnonymously(auth);
+        });
+
+        // --- UI UTILS ---
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            toast.innerText = msg;
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            setTimeout(() => toast.classList.add('translate-y-20', 'opacity-0'), 3000);
+        }
+
+        function formatCurrency(val) {
+            return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(val);
+        }
+
+        buttons.toggleNew.onclick = () => {
+            document.getElementById('new-game-settings').classList.remove('hidden');
+            buttons.join.classList.add('hidden');
+            buttons.create.classList.remove('hidden');
+            buttons.toggleNew.classList.add('hidden');
+        };
+
+        buttons.join.onclick = () => joinGame(false);
+        buttons.create.onclick = () => joinGame(true);
+
+        window.openTransfer = (targetId, senderId = 'Self') => {
+            activeTransferTarget = targetId;
+            activeTransferSender = senderId;
+            const modal = document.getElementById('transfer-modal');
+            const title = document.getElementById('transfer-title');
+            const desc = document.getElementById('transfer-desc');
+            
+            let targetName = targetId === 'Bank' ? "The Bank" : (targetId === 'Self' ? "You" : (allPlayers.find(x => x.id === targetId)?.name || "Player"));
+            let senderName = senderId === 'Bank' ? "The Bank" : "You";
+
+            title.innerText = `Transfer from ${senderName}`;
+            desc.innerText = `Sending money to ${targetName}`;
+            inputs.transferAmount.value = "";
+            modal.classList.remove('hidden');
+            inputs.transferAmount.focus();
+        };
+
+        window.closeTransfer = () => document.getElementById('transfer-modal').classList.add('hidden');
+
+        buttons.confirmTransfer.onclick = async () => {
+            const amount = parseInt(inputs.transferAmount.value);
+            if(!amount || amount <= 0) return showToast("Enter a valid amount");
+            const sender = activeTransferSender === 'Self' ? currentUser.uid : 'BANK';
+            const receiver = activeTransferTarget === 'Bank' ? 'BANK' : (activeTransferTarget === 'Self' ? currentUser.uid : activeTransferTarget);
+            
+            try {
+                await processTransfer(sender, receiver, amount);
+                closeTransfer();
+                showToast("Success!");
+            } catch (err) {
+                showToast(err.message);
+            }
+        };
+
+        // --- DATABASE ---
+        async function joinGame(isNew) {
+            const name = inputs.name.value.trim();
+            const gId = inputs.gameId.value.trim().toUpperCase();
+            if(!name || !gId || !currentUser) return showToast("Fill all fields");
+
+            currentGameId = gId;
+            const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', currentGameId);
+            const playerRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', currentGameId, 'players', currentUser.uid);
+
+            try {
+                const gameSnap = await getDoc(gameRef);
+                if(isNew) {
+                    if(gameSnap.exists()) return showToast("Game already exists!");
+                    await setDoc(gameRef, { bankBalance: parseInt(inputs.startBank.value), logs: [] });
+                    await setDoc(playerRef, { name, balance: parseInt(inputs.startPlayer.value) });
+                } else {
+                    if(!gameSnap.exists()) return showToast("Game not found");
+                    await setDoc(playerRef, { name, balance: 1500 }, { merge: true });
+                }
+
+                startListeners();
+                document.getElementById('setup-screen').classList.add('hidden');
+                document.getElementById('game-ui').classList.remove('hidden');
+                document.getElementById('display-game-id').innerText = `GAME: ${currentGameId}`;
+                document.getElementById('current-user-display').innerText = name;
+            } catch (err) {
+                showToast("Error joining game");
+            }
+        }
+
+        function startListeners() {
+            onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'games', currentGameId), (snap) => {
+                if(snap.exists()) {
+                    document.getElementById('bank-balance').innerText = formatCurrency(snap.data().bankBalance);
+                    updateLogsUI(snap.data().logs || []);
+                }
+            });
+
+            onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'games', currentGameId, 'players'), (snap) => {
+                const players = [];
+                snap.forEach(d => players.push({id: d.id, ...d.data()}));
+                allPlayers = players;
+                myData = players.find(p => p.id === currentUser.uid);
+                if(myData) document.getElementById('my-balance').innerText = formatCurrency(myData.balance);
+                updatePlayerListUI(players);
+            });
+        }
+
+        async function processTransfer(senderId, receiverId, amount) {
+            const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', currentGameId);
+            await runTransaction(db, async (transaction) => {
+                let senderRef = senderId === 'BANK' ? gameRef : doc(db, 'artifacts', appId, 'public', 'data', 'games', currentGameId, 'players', senderId);
+                let receiverRef = receiverId === 'BANK' ? gameRef : doc(db, 'artifacts', appId, 'public', 'data', 'games', currentGameId, 'players', receiverId);
+                
+                let sSnap = await transaction.get(senderRef);
+                let rSnap = await transaction.get(receiverRef);
+
+                let sBal = senderId === 'BANK' ? sSnap.data().bankBalance : sSnap.data().balance;
+                let rBal = receiverId === 'BANK' ? rSnap.data().bankBalance : rSnap.data().balance;
+
+                if (senderId !== 'BANK' && sBal < amount) throw new Error("Insufficient funds");
+
+                transaction.update(senderRef, senderId === 'BANK' ? {bankBalance: sBal - amount} : {balance: sBal - amount});
+                transaction.update(receiverRef, receiverId === 'BANK' ? {bankBalance: rBal + amount} : {balance: rBal + amount});
+                
+                let sName = senderId === 'BANK' ? "Bank" : sSnap.data().name;
+                let rName = receiverId === 'BANK' ? "Bank" : rSnap.data().name;
+                transaction.update(gameRef, { logs: arrayUnion({ msg: `${sName} paid ${rName} ${formatCurrency(amount)}`, time: Date.now() }) });
+            });
+        }
+
+        function updatePlayerListUI(players) {
+            const list = document.getElementById('players-list');
+            const others = players.filter(p => p.id !== currentUser.uid);
+            document.getElementById('player-count').innerText = `${players.length} online`;
+            list.innerHTML = others.map(p => `
+                <div class="flex items-center justify-between p-3 bg-white border rounded-xl">
+                    <div><span class="block font-bold">${p.name}</span><span class="text-sm text-gray-500">${formatCurrency(p.balance)}</span></div>
+                    <button onclick="openTransfer('${p.id}')" class="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg font-bold">Pay</button>
+                </div>
+            `).join('') || '<p class="text-gray-400 italic">No other players online</p>';
+        }
+
+        function updateLogsUI(logs) {
+            const list = document.getElementById('logs-list');
+            list.innerHTML = [...logs].reverse().slice(0, 15).map(l => `
+                <div class="p-2 bg-gray-50 rounded text-xs flex gap-2">
+                    <span class="text-gray-400">${new Date(l.time).toLocaleTimeString()}</span>
+                    <span>${l.msg}</span>
+                </div>
+            `).join('');
+        }
+    </script>
+</body>
+</html>
