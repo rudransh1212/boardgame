@@ -155,7 +155,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, collection, onSnapshot, updateDoc, arrayUnion, serverTimestamp, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Your provided Firebase configuration
@@ -171,7 +171,7 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        const appId = 'boardgame-4dad0-v1'; // Using your project ID as a prefix
+        const appId = 'boardgame-4dad0-v1'; 
 
         let currentUser = null;
         let currentGameId = null;
@@ -196,10 +196,30 @@
         };
 
         // --- AUTH ---
+        const initAuth = async () => {
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    try {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } catch (tokenErr) {
+                        console.warn("Token mismatch, falling back to anonymous auth...");
+                        await signInAnonymously(auth);
+                    }
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (err) {
+                console.error("Critical Auth Error:", err);
+                showToast("Connection Error. Check console.");
+            }
+        };
+
         onAuthStateChanged(auth, (user) => {
             currentUser = user;
-            if (!user) signInAnonymously(auth);
+            if (user) console.log("Logged in successfully:", user.uid);
         });
+
+        initAuth();
 
         // --- UI UTILS ---
         function showToast(msg) {
@@ -210,7 +230,7 @@
         }
 
         function formatCurrency(val) {
-            return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(val);
+            return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(val || 0);
         }
 
         buttons.toggleNew.onclick = () => {
@@ -243,6 +263,7 @@
         window.closeTransfer = () => document.getElementById('transfer-modal').classList.add('hidden');
 
         buttons.confirmTransfer.onclick = async () => {
+            if (!currentUser) return showToast("Waiting for auth...");
             const amount = parseInt(inputs.transferAmount.value);
             if(!amount || amount <= 0) return showToast("Enter a valid amount");
             const sender = activeTransferSender === 'Self' ? currentUser.uid : 'BANK';
@@ -253,15 +274,18 @@
                 closeTransfer();
                 showToast("Success!");
             } catch (err) {
-                showToast(err.message);
+                console.error("Transfer error:", err);
+                showToast(err.message || "Transfer failed.");
             }
         };
 
         // --- DATABASE ---
         async function joinGame(isNew) {
+            if (!currentUser) return showToast("Connecting...");
+
             const name = inputs.name.value.trim();
             const gId = inputs.gameId.value.trim().toUpperCase();
-            if(!name || !gId || !currentUser) return showToast("Fill all fields");
+            if(!name || !gId) return showToast("Enter name and game code");
 
             currentGameId = gId;
             const gameRef = doc(db, 'artifacts', appId, 'public', 'data', 'games', currentGameId);
@@ -269,13 +293,26 @@
 
             try {
                 const gameSnap = await getDoc(gameRef);
+                
                 if(isNew) {
                     if(gameSnap.exists()) return showToast("Game already exists!");
-                    await setDoc(gameRef, { bankBalance: parseInt(inputs.startBank.value), logs: [] });
-                    await setDoc(playerRef, { name, balance: parseInt(inputs.startPlayer.value) });
+                    
+                    await setDoc(gameRef, { 
+                        bankBalance: parseInt(inputs.startBank.value) || 20500, 
+                        logs: [{ msg: `Game created by ${name}`, time: Date.now() }] 
+                    });
+                    
+                    await setDoc(playerRef, { name: name, balance: parseInt(inputs.startPlayer.value) || 1500 });
                 } else {
-                    if(!gameSnap.exists()) return showToast("Game not found");
-                    await setDoc(playerRef, { name, balance: 1500 }, { merge: true });
+                    if(!gameSnap.exists()) return showToast("Game code not found!");
+                    
+                    const playerSnap = await getDoc(playerRef);
+                    if (!playerSnap.exists()) {
+                        await setDoc(playerRef, { name: name, balance: 1500 });
+                        await updateDoc(gameRef, {
+                            logs: arrayUnion({ msg: `${name} joined the game`, time: Date.now() })
+                        });
+                    }
                 }
 
                 startListeners();
@@ -284,17 +321,20 @@
                 document.getElementById('display-game-id').innerText = `GAME: ${currentGameId}`;
                 document.getElementById('current-user-display').innerText = name;
             } catch (err) {
-                showToast("Error joining game");
+                console.error("Database Join Error:", err);
+                showToast("Check your Firestore setup and rules.");
             }
         }
 
         function startListeners() {
+            if (!currentUser || !currentGameId) return;
+
             onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'games', currentGameId), (snap) => {
                 if(snap.exists()) {
                     document.getElementById('bank-balance').innerText = formatCurrency(snap.data().bankBalance);
                     updateLogsUI(snap.data().logs || []);
                 }
-            });
+            }, (err) => console.error("Bank Listener Error:", err));
 
             onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'games', currentGameId, 'players'), (snap) => {
                 const players = [];
@@ -303,7 +343,7 @@
                 myData = players.find(p => p.id === currentUser.uid);
                 if(myData) document.getElementById('my-balance').innerText = formatCurrency(myData.balance);
                 updatePlayerListUI(players);
-            });
+            }, (err) => console.error("Players Listener Error:", err));
         }
 
         async function processTransfer(senderId, receiverId, amount) {
@@ -315,17 +355,21 @@
                 let sSnap = await transaction.get(senderRef);
                 let rSnap = await transaction.get(receiverRef);
 
+                if (!sSnap.exists() || !rSnap.exists()) throw new Error("Participant not found");
+
                 let sBal = senderId === 'BANK' ? sSnap.data().bankBalance : sSnap.data().balance;
                 let rBal = receiverId === 'BANK' ? rSnap.data().bankBalance : rSnap.data().balance;
 
-                if (senderId !== 'BANK' && sBal < amount) throw new Error("Insufficient funds");
+                if (senderId !== 'BANK' && sBal < amount) throw new Error("Insufficient funds!");
 
                 transaction.update(senderRef, senderId === 'BANK' ? {bankBalance: sBal - amount} : {balance: sBal - amount});
                 transaction.update(receiverRef, receiverId === 'BANK' ? {bankBalance: rBal + amount} : {balance: rBal + amount});
                 
                 let sName = senderId === 'BANK' ? "Bank" : sSnap.data().name;
                 let rName = receiverId === 'BANK' ? "Bank" : rSnap.data().name;
-                transaction.update(gameRef, { logs: arrayUnion({ msg: `${sName} paid ${rName} ${formatCurrency(amount)}`, time: Date.now() }) });
+                transaction.update(gameRef, { 
+                    logs: arrayUnion({ msg: `${sName} paid ${rName} ${formatCurrency(amount)}`, time: Date.now() }) 
+                });
             });
         }
 
@@ -334,19 +378,19 @@
             const others = players.filter(p => p.id !== currentUser.uid);
             document.getElementById('player-count').innerText = `${players.length} online`;
             list.innerHTML = others.map(p => `
-                <div class="flex items-center justify-between p-3 bg-white border rounded-xl">
+                <div class="flex items-center justify-between p-3 bg-white border rounded-xl shadow-sm">
                     <div><span class="block font-bold">${p.name}</span><span class="text-sm text-gray-500">${formatCurrency(p.balance)}</span></div>
-                    <button onclick="openTransfer('${p.id}')" class="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg font-bold">Pay</button>
+                    <button onclick="openTransfer('${p.id}')" class="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg font-bold hover:bg-blue-200">Pay</button>
                 </div>
-            `).join('') || '<p class="text-gray-400 italic">No other players online</p>';
+            `).join('') || '<p class="text-gray-400 italic">No other players online yet.</p>';
         }
 
         function updateLogsUI(logs) {
             const list = document.getElementById('logs-list');
             list.innerHTML = [...logs].reverse().slice(0, 15).map(l => `
-                <div class="p-2 bg-gray-50 rounded text-xs flex gap-2">
-                    <span class="text-gray-400">${new Date(l.time).toLocaleTimeString()}</span>
-                    <span>${l.msg}</span>
+                <div class="p-2 bg-gray-50 rounded text-xs flex gap-2 border-b border-gray-100 last:border-0">
+                    <span class="text-gray-400 font-mono">${new Date(l.time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                    <span class="text-gray-700 font-medium">${l.msg}</span>
                 </div>
             `).join('');
         }
